@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stu-avatar demo</title>
+<style>
+  body{margin:0;font:16px/1.5 system-ui,sans-serif;background:#eef2f8;color:#16213a;padding:24px 16px}
+  .wrap{max-width:900px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:center}
+  @media (max-width:700px){.wrap{grid-template-columns:1fr}}
+  stu-avatar{max-width:420px;margin:0 auto}
+  button{font:inherit;font-weight:700;padding:10px 16px;border-radius:10px;border:0;background:#1e2f5c;color:#fff;cursor:pointer}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .row button.alt{background:transparent;color:#1e2f5c;border:1px solid #9fb0cf}
+  code{background:#fff;padding:2px 6px;border-radius:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <stu-avatar id="stu"></stu-avatar>
+  <div>
+    <h1>stu-avatar</h1>
+    <p>Plays <code>../samples/stu-line.mp3</code> with its Rhubarb timing file.</p>
+    <div class="row">
+      <button id="play">Play with timing file</button>
+      <button id="live" class="alt">Play without (live estimate)</button>
+      <button id="stop" class="alt">Stop</button>
+    </div>
+    <div class="row">
+      <button class="alt" data-pose="idle">Idle</button>
+      <button class="alt" data-pose="open">Welcome</button>
+      <button class="alt" data-pose="think">Thinking</button>
+    </div>
+    <p id="status">Ready</p>
+  </div>
+</div>
+<script type="module">
+  import './stu-avatar/stu-avatar.js';
+  const stu = document.getElementById('stu');
+  const status = document.getElementById('status');
+  stu.addEventListener('speakstart', () => status.textContent = 'Speaking');
+  stu.addEventListener('speakend', e => status.textContent = e.detail.interrupted ? 'Stopped' : 'Done');
+  document.getElementById('play').onclick = () => {
+    stu.unlock();
+    stu.speak({ audio: '../samples/stu-line.mp3', cues: '../samples/stu-line.cues.json' });
+  };
+  document.getElementById('live').onclick = () => { stu.unlock(); stu.speak({ audio: '../samples/stu-line.mp3' }); };
+  document.getElementById('stop').onclick = () => stu.stop();
+  document.querySelectorAll('[data-pose]').forEach(b => b.onclick = () => stu.setPose(b.dataset.pose));
+</script>
+</body>
+</html>

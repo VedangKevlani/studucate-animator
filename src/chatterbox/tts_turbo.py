@@ -232,7 +232,7 @@ class ChatterboxTurboTTS:
             gain_db = target_lufs - loudness
             gain_linear = 10.0 ** (gain_db / 20.0)
             if math.isfinite(gain_linear) and gain_linear > 0.0:
-                wav = wav * gain_linear
+                wav = (wav * gain_linear).astype(wav.dtype)
         except Exception as e:
             print(f"Warning: Error in norm_loudness, skipping: {e}")
 

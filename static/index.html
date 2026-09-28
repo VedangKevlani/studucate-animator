@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Studucate Voice Designer</title>
+<link rel="icon" href="/static/assets/logo-mark.png" />
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+	<main class="page">
+		<header class="header">
+			<div class="header__top">
+				<div class="brand">
+					<img src="/static/assets/logo-wordmark.png" alt="Studucate" class="brand__logo" />
+				</div>
+				<div class="header__controls">
+					<button id="theme-toggle" class="icon-btn theme-toggle" type="button" aria-label="Switch to dark mode">
+						<svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+							<circle cx="12" cy="12" r="4.2" />
+							<path d="M12 2.5v2.4M12 19.1v2.4M4.6 4.6l1.7 1.7M17.7 17.7l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.6 19.4l1.7-1.7M17.7 6.3l1.7-1.7" />
+						</svg>
+						<svg class="icon-moon" hidden viewBox="0 0 24 24" fill="currentColor">
+							<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+						</svg>
+					</button>
+				</div>
+			</div>
+			<h1>Voice Designer</h1>
+			<p class="header__subtitle">Type something, hear it in Stu's voice.</p>
+		</header>
+
+		<aside class="stu-stage" aria-label="Stu">
+			<stu-avatar id="stu"></stu-avatar>
+			<p id="stu-status" class="stu-stage__status" aria-live="polite">Hi, I'm Stu!</p>
+		</aside>
+
+		<div class="designer">
+		<section class="composer">
+			<textarea
+				id="text-input"
+				class="composer__textarea"
+				placeholder="Type or paste the text you want spoken..."
+				rows="6"
+				maxlength="5000"
+			></textarea>
+
+			<div class="composer__footer">
+				<span id="word-count" class="hint">0 words</span>
+				<button id="generate-btn" class="btn btn--primary" type="button">
+					<span class="btn__label">Generate</span>
+					<span class="btn__spinner" aria-hidden="true"></span>
+				</button>
+			</div>
+
+			<p id="error-message" class="error" hidden></p>
+
+			<div id="progress" class="progress" hidden>
+				<div class="progress__track">
+					<div id="progress-bar" class="progress__bar"></div>
+				</div>
+				<div class="progress__footer">
+					<span id="progress-label" class="hint">Generating...</span>
+					<button id="stop-btn" class="btn btn--ghost btn--small" type="button">Stop</button>
+				</div>
+			</div>
+		</section>
+		</div>
+
+		<section class="teleprompter" id="teleprompter" aria-label="Teleprompter">
+			<h2 class="results__heading">Teleprompter</h2>
+			<div class="teleprompter__viewport">
+				<p class="teleprompter__placeholder">Play a clip and Stu's lines will scroll here as he reads.</p>
+				<p class="teleprompter__text"></p>
+			</div>
+		</section>
+
+		<aside class="sidebar results" aria-labelledby="results-heading">
+			<div class="results__header">
+				<h2 id="results-heading" class="results__heading">Recent generations</h2>
+				<button id="clear-history-btn" class="btn btn--ghost btn--small" type="button" hidden>Clear</button>
+			</div>
+			<ul id="results-list" class="results__list"></ul>
+			<p id="empty-state" class="empty-state" hidden>Generated clips will show up here, ready to play and download.</p>
+			<p id="loading-history" class="hint">Loading recent generations...</p>
+		</aside>
+	</main>
+
+	<script type="module" src="/static/stu-avatar/stu-avatar.js"></script>
+	<script src="/static/teleprompter.js"></script>
+	<script src="/static/mood.js"></script>
+	<script src="/static/app.js"></script>
+</body>
+</html>

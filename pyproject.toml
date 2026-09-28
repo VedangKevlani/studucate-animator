@@ -28,7 +28,10 @@ dependencies = [
     "pykakasi==2.3.0",
     "gradio==6.8.0",
     "pyloudnorm",
-    "omegaconf"
+    "omegaconf",
+    "soundfile",
+    "flask",
+    "spaces"
 ]
 
 [project.urls]

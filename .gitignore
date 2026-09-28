@@ -46,3 +46,9 @@ checkpoints/
 
 # Ignore generated sample .wav files
 **/*.wav
+
+# Chatterbox web UI - generated clips, not source
+outputs/
+
+# Rhubarb Lip Sync binaries, downloaded by install_rhubarb.py
+/tools/
