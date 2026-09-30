@@ -52,3 +52,10 @@ outputs/
 
 # Rhubarb Lip Sync binaries, downloaded by install_rhubarb.py
 /tools/
+
+# Local-only files for the Stu voice designer
+# Licensed ElevenLabs voice sample - never commit (see CLAUDE.md)
+ElevenLabs_*.mp3
+server_log.txt
+# Separate repo (older deploy copy with its own remotes)
+chatterbox-tts-voice/

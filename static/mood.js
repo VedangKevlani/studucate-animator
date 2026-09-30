@@ -62,6 +62,18 @@ const MOOD_WORDS = {
 	reassuring: ["always", "safe", "together", "gently", "breathe", "reassure", "reassuring", "promise"],
 };
 
+// Action words: a leg move Stu does on top of the sentence's mood ("Let's
+// jump!" is excited AND a jump). The first action word in a sentence wins.
+const MOOD_ACTIONS = {
+	jump: ["jump", "jumps", "jumping", "hop", "hops", "hopping", "leap", "leaping"],
+	dance: ["dance", "dances", "dancing", "party", "groove", "grooving", "boogie", "celebrate", "celebrating"],
+	march: ["march", "marching", "walk", "walking", "stroll", "parade"],
+	stomp: ["stomp", "stomps", "stomping"],
+	tap: ["tap", "taps", "tapping", "impatient", "tick"],
+	bounce: ["bounce", "bouncing", "bouncy", "wiggle", "wiggling"],
+	kick: ["kick", "kicks", "kicking", "goal", "soccer", "football"],
+};
+
 // Words that flip a following positive word ("not happy", "never good").
 const MOOD_NEGATIONS = new Set(["not", "never", "no", "don't", "dont", "isn't", "isnt", "wasn't", "wasnt", "can't", "cant"]);
 const MOOD_POSITIVE = new Set(["happy", "excited"]);
@@ -114,7 +126,7 @@ function splitSentences(tokens) {
 function readSentence(sentence) {
 	if (sentence.tag !== undefined) {
 		const mood = MOOD_TAGS[sentence.tag] || "neutral";
-		return { mood, intensity: 1, reason: `[${sentence.tag}]` };
+		return { mood, intensity: 1, action: null, reason: `[${sentence.tag}]` };
 	}
 
 	const raw = sentence.tokens.join(" ");
@@ -201,10 +213,17 @@ function readSentence(sentence) {
 	if (best === "happy" && intensity >= 1.4) {
 		best = "excited";
 	}
-	return { mood: best, intensity: Math.max(0.6, Math.min(1.6, intensity)), reason: bestScore ? `score ${bestScore}` : "punctuation" };
+	let action = null;
+	for (const { word } of words) {
+		action = Object.keys(MOOD_ACTIONS).find((a) => MOOD_ACTIONS[a].includes(word)) || null;
+		if (action) {
+			break;
+		}
+	}
+	return { mood: best, intensity: Math.max(0.6, Math.min(1.6, intensity)), action, reason: bestScore ? `score ${bestScore}` : "punctuation" };
 }
 
-// -> [{ startToken, mood, intensity, text }]
+// -> [{ startToken, mood, intensity, action, text }]
 function analyzeMoods(text) {
 	return splitSentences(moodTokens(text)).map((sentence) => ({
 		startToken: sentence.startToken,

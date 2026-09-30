@@ -1,3 +1,165 @@
+# Studucate Voice Designer (Stu)
+
+A local web app: type a script, and it is spoken in Stu's voice by an
+animated Stu avatar. Stu lip-syncs and acts out the mood of each sentence.
+You can download the audio (MP3) or a video of Stu speaking it (MP4).
+
+It runs on [Chatterbox-Turbo](#chatterbox-tts), Resemble AI's open-source
+text-to-speech model, which is included in this repo under `src/chatterbox`.
+Everything runs on your own machine. You don't need an account or API key.
+
+## 1. What you need
+
+| Tool | Why | How to install |
+|---|---|---|
+| **Git** | To download the code | https://git-scm.com/downloads |
+| **Python 3.11 or 3.12** | Runs the server and the model. 3.12 is tested. Avoid 3.14 for now. | https://www.python.org/downloads/ (or let `uv` install it, below) |
+| **uv** (recommended) | Installs the exact tested package versions from `uv.lock` | https://docs.astral.sh/uv/getting-started/installation/ |
+| **FFmpeg, with the `rubberband` filter** | Prepares Stu's voice, converts audio to MP3, builds videos | Windows: `winget install Gyan.FFmpeg` · macOS: `brew install ffmpeg` · Ubuntu/Debian: `sudo apt install ffmpeg` |
+| **Chrome, Edge or Safari** (recent) | The web page. Video download needs WebCodecs, which Firefox lacks. | — |
+
+Hardware: runs on CPU, or on an NVIDIA GPU if one is detected (much faster).
+The first run downloads the model weights from Hugging Face, so you need an
+internet connection and a few GB of free disk space.
+
+**Check FFmpeg before continuing.** Open a new terminal and run:
+
+```shell
+ffmpeg -hide_banner -filters | grep rubberband        # macOS / Linux / Git Bash
+ffmpeg -hide_banner -filters | findstr rubberband     # Windows PowerShell / cmd
+```
+
+You should see a line containing `rubberband`. If `ffmpeg` isn't found,
+restart your terminal (or your computer) after installing it. If the command
+runs but prints nothing, your FFmpeg build lacks rubberband: install a "full"
+build (the Windows `winget` command above installs one).
+
+## 2. Install
+
+```shell
+git clone https://github.com/VedangKevlani/studucate-voice-designer.git
+cd studucate-voice-designer
+```
+
+**Option A: uv (recommended)**
+
+```shell
+uv sync --python 3.12
+```
+
+This creates a `.venv` folder with everything installed, including PyTorch.
+It takes a few minutes.
+
+**Option B: plain pip**
+
+```shell
+python -m venv .venv
+# Windows:        .venv\Scripts\activate
+# macOS / Linux:  source .venv/bin/activate
+pip install -e .
+```
+
+On Windows, if `python` opens the Microsoft Store, use `py -3.12` instead of
+`python`, or turn off the alias in *Settings → Apps → Advanced app settings →
+App execution aliases*.
+
+**Optional: NVIDIA GPU.** The default install may give you a CPU-only
+PyTorch. For GPU speed, install the CUDA build of `torch`/`torchaudio` 2.6.0
+from https://pytorch.org/get-started/locally/ into the same environment.
+
+## 3. Install Rhubarb (lip sync, recommended)
+
+Stu's mouth shapes come from [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync)
+(free, MIT). This downloads it into `./tools/`:
+
+```shell
+uv run python install_rhubarb.py      # or, with an activated venv: python install_rhubarb.py
+```
+
+Without Rhubarb the app still works, but Stu's mouth only follows loudness.
+On macOS, if the system blocks it, run the `xattr` command the script prints.
+
+## 4. Run
+
+```shell
+uv run python server.py               # or, with an activated venv: python server.py
+```
+
+Open **http://127.0.0.1:7860** in your browser.
+
+- The first start downloads the model (a few minutes), then loads it and
+  prepares Stu's voice. The page shows when it's ready.
+- Type a script, press **Generate**, and Stu speaks it. A progress bar shows
+  each chunk being generated. On CPU, expect roughly real time or slower.
+- Past clips are listed in the history panel. The files are saved in
+  `outputs/`.
+- Stop the server with `Ctrl+C`.
+
+### Settings (environment variables, all optional)
+
+| Variable | Default | What it does |
+|---|---|---|
+| `PORT` | `7860` | Port the server listens on |
+| `HOST` | `127.0.0.1` | Set to `0.0.0.0` to allow other devices on your network (or a container) to connect |
+| `STU_LIPSYNC_RECOGNIZER` | `pocketSphinx` | `phonetic` is about 4x faster, with slightly looser mouth timing |
+| `RHUBARB_PATH` | auto | Full path to a Rhubarb executable, if it isn't in `./tools/` or on `PATH` |
+| `HF_TOKEN` | none | Hugging Face token. Not required. Only useful if downloads are rate-limited. |
+
+Example: `PORT=8000 uv run python server.py` (macOS/Linux) or
+`$env:PORT=8000; uv run python server.py` (PowerShell).
+
+## 5. Writing scripts for Stu
+
+- **Sounds:** `[laugh]`, `[chuckle]`, `[sigh]`, `[gasp]`, `[cough]`, `[groan]`,
+  `[sniff]`, `[clear throat]`, `[shush]` are performed as sounds.
+- **Don't use** `[pause]` or `*asterisks*`. They are read out loud as words.
+  To make a pause, use punctuation (`...`, or start a new sentence).
+- **Emotions:** Stu picks an emotion for each sentence from its wording and
+  punctuation (e.g. "Don't worry, you've got this." reads as reassuring).
+  [STU_EMOTIONS.md](STU_EMOTIONS.md) lists every emotion and the words that
+  trigger it.
+- **Long text is fine** (up to 5000 characters). It's split into short
+  groups of sentences automatically, so quality holds up over long scripts.
+
+## Other tools in this repo
+
+| Command | What it does |
+|---|---|
+| `uv run python app.py` | Generates one test line in Stu's voice to `test-turbo.mp3`, with no web UI |
+| `uv run python stu_lipsync.py clip.mp3 --text "the words spoken"` | Makes a `clip.cues.json` lip-sync file for any audio clip |
+| `uv run python build_stu_rig.py` | Rebuilds Stu's cut-out puppet layers in `static/stu-avatar/assets/rig/` from the pose art. Only needed if you change the artwork. |
+
+## Project layout
+
+```
+server.py            Flask web server: page, generation jobs, history, video export
+tts_engine.py        Voice pipeline: prepares the reference voice, chunks text, runs Chatterbox-Turbo
+stu_lipsync.py       Runs Rhubarb to make mouth-shape cues for a clip
+install_rhubarb.py   Downloads Rhubarb into ./tools/
+male_voice.mp3       Reference recording that Stu's voice is cloned from
+static/              The web page (index.html, app.js, mood.js, video-export.js, ...)
+static/stu-avatar/   The <stu-avatar> web component and its art
+src/chatterbox/      The Chatterbox TTS model code (upstream, Resemble AI)
+outputs/             Generated clips, lip-sync files and history (created on first run, not committed)
+CLAUDE.md            Voice settings and why they were chosen. Read this before changing the voice.
+```
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `FileNotFoundError: ... 'ffmpeg'` | FFmpeg isn't installed or isn't on `PATH`. Install it (step 1), then open a **new** terminal. |
+| Error mentioning `rubberband` / `No such filter` | Your FFmpeg build lacks rubberband. Install a full build (step 1). |
+| Page says the model is still loading for a long time | The first run is downloading the model. Watch the terminal for progress. Later starts are faster. |
+| Stu's mouth doesn't match the words well | Install Rhubarb (step 3). Check the terminal for `Lip sync failed` messages. |
+| Video download button is disabled | Use a recent Chrome, Edge or Safari. |
+| `Address already in use` | Another program uses port 7860. Stop it, or set `PORT` to a different number. |
+| Generation is slow | Normal on CPU. Use an NVIDIA GPU with CUDA PyTorch for a big speedup. |
+
+---
+
+*The rest of this file is the original Chatterbox documentation from Resemble AI.*
+
 ![Chatterbox Multilingual Image](./Chatterbox-Multilingual.png)
 
 

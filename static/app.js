@@ -104,9 +104,14 @@ function applyMoodAt(wordIndex) {
 		return;
 	}
 	moodIndex = index;
-	const { mood, intensity } = moodPlan[index];
+	const { mood, intensity, action } = moodPlan[index];
 	stuStatus.textContent = MOOD_LABELS[mood] ?? "";
-	stuReady.then(() => stu.setMood(mood, intensity));
+	stuReady.then(() => {
+		stu.setMood(mood, intensity);
+		if (action) {
+			stu.act(action);
+		}
+	});
 }
 
 teleprompterEl.addEventListener("wordchange", (e) => {

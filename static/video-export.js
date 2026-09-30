@@ -66,6 +66,9 @@ export async function exportVideo({ audioUrl, cuesUrl, text, format = "square", 
 			const t = i / FPS;
 			while (nextMood < moods.length && moods[nextMood].time <= t) {
 				player.setMood(moods[nextMood].mood, moods[nextMood].intensity);
+				if (moods[nextMood].action) {
+					player.act(moods[nextMood].action);
+				}
 				nextMood += 1;
 			}
 			player.advance(t);

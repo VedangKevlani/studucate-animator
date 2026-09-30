@@ -4,13 +4,22 @@ Reads the original pose images (left untouched) and writes separate layers to
 static/stu-avatar/assets/rig/, all on the same 690x750 canvas as the source so
 they stack with no offsets. Draw order in stu-avatar.js, back to front:
 
-    leg-l, leg-r          legs and shoes
+    leg-l, leg-r          legs from under the shorts down into the shoe
+    shoe-l, shoe-r        shoes (the joint with the leg hides under the collar)
     shoulders             shirt texture continued under the sleeves - only
                           seen when a sleeve swings away from the body
     arm-l, arm-r          sleeve + hanging arm (from stu-idle)
     arm-l-out, arm-r-out  sleeve + open-handed arm held out (from stu-open)
     torso                 shirt + shorts, without sleeves, arms, legs, head
-    head                  head, cap and tassel
+    head                  head, cap and tassel, with the eyebrows painted out
+    brow-l, brow-r        eyebrows, so they can rise, drop and tilt per emotion
+
+Face overlays, positioned like the existing mouth and eyelid images:
+
+    eyes-lid-20/35/50/65.png   upper eyelids part-closed (20% to 65%), for
+                               happy, soft, droopy or narrowed eyes
+    mouth-flat.png             a closed, flat mouth (from stu-think) for sad,
+                               serious or thoughtful moments between words
 
 "l"/"r" are screen left/right. Each arm is its sleeve and arm together,
 pivoting at the middle of the shoulder seam, so the fabric moves with the
@@ -59,6 +68,20 @@ SEAMS = {
     "open-r": (430, 436),
 }
 SLEEVE_ROWS = (318, 434)
+# Legs: the visible leg is too short (~35px above any knee) for a knee joint
+# to look right, so each leg is one piece from the shorts' hem into the shoe,
+# jointed at the ankle, where the shoe's collar hides the seam. The leg piece
+# pivots at the hem; the shoe follows the foot.
+HIP_Y = 568   # at the hem, so the hidden top of the leg barely moves when it swings out
+FOOT_Y = 705
+ANKLE_Y = {}  # measured per leg: the middle of the shoe collar
+# Eyebrow search boxes (screen left/right) and the part-closed eyelid levels.
+BROW_BOXES = {"l": (255, 166, 310, 202), "r": (366, 160, 424, 198)}
+LID_LEVELS = (0.20, 0.35, 0.50, 0.65)
+# The closed-eye and mouth overlays sit at these canvas rects (1024-canvas
+# rects from stu-avatar.js minus the crop offset 170,160).
+EYES_RECT = (415 - 170, 340 - 160, 190, 90)
+MOUTH_RECT = (445 - 170, 405 - 160, 130, 80)
 FRINGE_PX = 3
 # The shirt's outline under each sleeve (screen-left side; mirrored for the
 # right around x=345): from the collar over a rounded shoulder cap, tapering
@@ -176,6 +199,91 @@ def cap_sleeve(arm, src, fabric, seam, side, yy, xx, hidden=None, supersample=4)
     return under(cap, arm)
 
 
+def brow_mask(img, box):
+    """An eyebrow: the dark-blue stroke inside box, on the face's own skin."""
+    x0, y0, x1, y1 = box
+    rgb = img[..., :3].astype(float)
+    lum = rgb @ [0.299, 0.587, 0.114]
+    blue = (rgb[..., 2] - rgb[..., 0]) > 25
+    sub, subblue = lum[y0:y1, x0:x1], blue[y0:y1, x0:x1]
+    skin = np.median(sub[subblue])
+    dark = (sub < skin - 30) & subblue
+    labels, n = ndimage.label(dark)
+    sizes = ndimage.sum(dark, labels, range(1, n + 1))
+    mask = np.zeros(img.shape[:2], bool)
+    mask[y0:y1, x0:x1] = labels == (np.argmax(sizes) + 1)
+    mask = ndimage.binary_fill_holes(ndimage.binary_closing(mask, iterations=2))
+    return ndimage.binary_dilation(mask, iterations=2)
+
+
+# Each eye opening (rim included), traced from the art: centre and radii.
+EYE_OPENINGS = {"l": (288, 223.5, 26.5, 27.5), "r": (391, 223.5, 25.5, 27.5)}
+LASH_COLOR = (24, 42, 66)
+
+
+def lid_levels(src):
+    """Part-closed upper eyelids, drawn at full resolution inside each eye
+    opening: skin carried down from just above the eye, a crisp curved edge
+    with a lash line, and a soft shadow on the eyeball under it. Returned as
+    images covering EYES_RECT, like the closed-eye overlay."""
+    ex, ey, ew, eh = EYES_RECT
+    h, w = src.shape[:2]
+    ss = 4
+    yy, xx = np.mgrid[0:h, 0:w]
+    skin = skin_mask(src) & (src[..., 3] > 250)
+    out = {}
+    for level in LID_LEVELS:
+        canvas = np.zeros((h, w, 4), np.float32)
+        for cx, cy, rx, ry in EYE_OPENINGS.values():
+            # Anti-aliased coverage of the opening (grown a touch to cover the rim).
+            big = Image.new("L", (w * ss, h * ss), 0)
+            ImageDraw.Draw(big).ellipse([(cx - rx - 1.5) * ss, (cy - ry - 1.5) * ss, (cx + rx + 1.5) * ss, (cy + ry + 1.5) * ss], fill=255)
+            inside = np.array(big.resize((w, h), Image.BOX)).astype(np.float32) / 255
+            # Lid edge: a curve that sags slightly in the middle, at `level` of the way down.
+            u = np.clip((xx - cx) / rx, -1, 1)
+            edge = (cy - ry) + level * 2 * ry + 0.12 * ry * (1 - u ** 2)
+            cover = np.clip(edge - yy + 0.5, 0, 1) * inside  # 1 above the edge, anti-aliased at it
+            # Skin: each column carries down the skin just above the eye's top
+            # edge (like a lid sliding down), softened sideways so it blends.
+            fill = np.zeros((h, w, 3), np.float32)
+            x_lo, x_hi = int(cx - rx - 3), int(cx + rx + 4)
+            cols = []
+            for x in range(x_lo, x_hi):
+                uu = min(1.0, abs((x - cx) / (rx + 1.5)))
+                top = int(cy - (ry + 1.5) * np.sqrt(1 - uu ** 2)) - 3
+                band = src[max(0, top - 5):top, x, :3].astype(np.float32)
+                band = band[skin[max(0, top - 5):top, x]] if skin[max(0, top - 5):top, x].any() else band
+                cols.append(band.mean(axis=0))
+            cols = np.array(cols)
+            cols = np.stack([ndimage.gaussian_filter1d(cols[:, c], 2.0, mode="nearest") for c in range(3)], -1)
+            fill[:, x_lo:x_hi] = cols[None, :, :]
+            # Lid curvature: slightly darker toward its edge.
+            depth = np.clip((edge - yy) / 6, 0, 1)
+            fill *= (0.9 + 0.1 * depth)[..., None]
+            # Lash line along the edge, and a soft shadow on the eye below it.
+            dist = yy - edge  # >0 below the edge
+            lash = np.clip(1.3 - np.abs(dist + 0.6) / 1.1, 0, 1) * inside
+            shadow = np.clip(1 - dist / 5, 0, 1) * (dist > 0) * 0.35 * inside
+            rgb = fill * cover[..., None]
+            alpha = cover.copy()
+            for c in range(3):
+                rgb[..., c] = rgb[..., c] * (1 - lash) + LASH_COLOR[c] * lash
+            alpha = np.maximum(alpha, lash)
+            # Shadow: dark, partly transparent, only where the lid isn't.
+            shade_a = shadow * (1 - alpha)
+            rgb = rgb + np.array(LASH_COLOR, np.float32) * shade_a[..., None]
+            alpha = alpha + shade_a
+            mask = inside > 0
+            canvas[mask, :3] = np.where(alpha[mask, None] > 0, rgb[mask] / np.maximum(alpha[mask, None], 1e-6), 0)
+            canvas[mask, 3] = np.maximum(canvas[mask, 3], alpha[mask])
+        img = np.zeros((eh, ew, 4), np.uint8)
+        crop = canvas[ey:ey + eh, ex:ex + ew]
+        img[..., :3] = np.clip(crop[..., :3], 0, 255).astype(np.uint8)
+        img[..., 3] = np.clip(crop[..., 3] * 255, 0, 255).astype(np.uint8)
+        out[level] = img
+    return out
+
+
 def layer(src, mask):
     out = src.copy()
     out[..., 3] = np.where(mask, src[..., 3], 0)
@@ -201,6 +309,9 @@ def under(filler, top):
     base = Image.fromarray(filler)
     base.alpha_composite(Image.fromarray(top))
     return np.array(base)
+
+
+LEG_X = {}
 
 
 def build():
@@ -238,16 +349,29 @@ def build():
     limb_l = (arm_l & opaque) | near_l | sleeve_l
     limb_r = (arm_r & opaque) | near_r | sleeve_r
 
-    # --- legs: below the shorts hem (strict shorts navy, smoothed per column).
+    # --- legs: cut where the leg's skin starts under the shorts. Everything
+    # above - including the dark rim and shadow along the bottom of the
+    # shorts - stays with the shorts, so a moving leg takes only skin with it.
+    # Per column: the first row of leg skin below the shorts, then smoothed.
     rgb = idle[..., :3].astype(int)
-    navy = (idle[..., 3] > 200) & (rgb[..., 0] < 40) & (rgb[..., 1] < 50) & (rgb[..., 2] < 88)
-    hem = np.full(w, 578)
-    for x in range(w):
-        ys = np.nonzero(navy[520:600, x])[0]
+    navy = (idle[..., 3] > 200) & (rgb[..., 0] < 40) & (rgb[..., 1] < 50) & (rgb[..., 2] < 88)  # shorts fabric
+    hem = np.full(w, np.nan)
+    for x in range(196, 495):
+        col = skin[545:640, x] & solid[545:640, x]
+        # Need a few skin rows in a row, so stray bluish specks in the rim don't count.
+        run = np.convolve(col.astype(int), np.ones(4, int), mode="valid") == 4
+        ys = np.nonzero(run)[0]
         if len(ys):
-            hem[x] = 520 + ys.max() + 1
+            hem[x] = 545 + ys[0]
+    valid = ~np.isnan(hem)
+    hem = np.interp(np.arange(w), np.nonzero(valid)[0], hem[valid])
     hem = ndimage.median_filter(hem, size=9)
+    # The leg's dark outline columns have no skin, so their cut lands too low:
+    # take the highest cut nearby so the outline goes with the leg too.
+    hem = ndimage.minimum_filter1d(hem, 9)
+    hem = np.round(ndimage.gaussian_filter1d(hem, 2.5, mode="nearest") + 1).astype(int)
     legs = (yy >= hem[None, :]) & opaque & ~limb_l & ~limb_r & (yy > 540)
+
     leg_l = legs & (xx >= 196) & (xx < 345)
     leg_r = legs & (xx >= 345) & (xx <= 494)
 
@@ -286,7 +410,22 @@ def build():
     neck_fill = head & solid & (yy >= 286) & (xx > 248) & (xx < 432)
     neck = continue_pixels(idle, face & solid & (yy > 270) & (yy < 300), neck_fill, blur=3.0)
     layers["torso"] = under(neck, layer(idle, torso))
-    layers["head"] = layer(idle, head)
+    # Eyebrows as their own layers; the forehead under them is filled with the
+    # surrounding skin so a brow can move without leaving its old shape behind.
+    head_img = idle.copy()
+    brows = {}
+    for side, box in BROW_BOXES.items():
+        brow = brow_mask(idle, box)
+        brows[side] = brow
+        hole = ndimage.binary_dilation(brow, iterations=3)
+        ring = ndimage.binary_dilation(brow, iterations=10) & ~hole & skin & solid
+        patch = continue_pixels(idle, ring, hole, blur=2.5)
+        head_img[hole, :3] = patch[hole, :3]
+        soft = np.clip(ndimage.gaussian_filter(brow.astype(float), 0.7) * 1.4, 0, 1)
+        brow_layer = idle.copy()
+        brow_layer[..., 3] = (soft * idle[..., 3]).astype(np.uint8)
+        layers[f"brow-{side}"] = brow_layer
+    layers["head"] = layer(head_img, head)
 
     # Shoulders: the shirt inside that outline, textured from well inside the
     # shirt (so edge shading doesn't smear), shaded toward its outer edge.
@@ -330,19 +469,60 @@ def build():
     layers["arm-l-out"] = cap_sleeve(layer(opened, out_l & ~o_head_zone), opened, sleeve_ol, SEAMS["open-l"], -1, yy, xx)
     layers["arm-r-out"] = cap_sleeve(layer(opened, out_r & ~o_head_zone), opened, sleeve_or, SEAMS["open-r"], 1, yy, xx)
 
-    # Legs continue up under the shorts by repeating their own top pixels.
-    for name, mask in (("leg-l", leg_l), ("leg-r", leg_r)):
-        filler = np.zeros_like(mask)
+    # Legs: leg piece (continuing up under the shorts by repeating its own top
+    # pixels, and down under the shoe collar) and shoe, cut along the collar.
+    ankle = np.full(w, np.nan)
+    for x in range(196, 495):
+        col = skin[612:700, x]
+        if not col[:6].any():
+            continue
+        run = np.convolve((~col & opaque[612:700, x]).astype(int), np.ones(4, int), mode="valid") == 4
+        ys = np.nonzero(run)[0]
+        if len(ys):
+            ankle[x] = 612 + ys[0]
+    valid = ~np.isnan(ankle)
+    ankle = np.interp(np.arange(w), np.nonzero(valid)[0], ankle[valid])
+    ankle = np.round(ndimage.gaussian_filter1d(ndimage.median_filter(ankle, size=11), 3, mode="nearest")).astype(int)
+    below_collar = yy >= ankle[None, :]
+    for side, mask in (("l", leg_l), ("r", leg_r)):
+        up = np.zeros_like(mask)
         for x in range(w):
             y = hem[x]
             if mask[y:y + 10, x].any():
-                filler[max(0, y - 35):y + 2, x] = True
-        filler &= torso & solid
-        layers[name] = under(continue_pixels(idle, mask & solid, filler, blur=1.0), layer(idle, mask))
+                up[max(0, y - 22):y + 2, x] = True
+        up &= torso & solid
+        leg_part = mask & ~below_collar
+        shoe_part = mask & below_collar
+        # Under the collar: the leg carries on a little, hidden by the shoe at rest.
+        down = shoe_part & (yy < ankle[None, :] + 14) & solid
+        leg_img = under(continue_pixels(idle, leg_part & solid, up | down, blur=1.0), layer(idle, leg_part))
+        layers[f"leg-{side}"] = leg_img
+        layers[f"shoe-{side}"] = layer(idle, shoe_part)
+        cols = np.nonzero(leg_part[600])[0]
+        LEG_X[side] = int(round((cols.min() + cols.max()) / 2))
+        ANKLE_Y[side] = int(np.median(ankle[cols.min():cols.max() + 1]))
 
     OUT.mkdir(exist_ok=True)
     for name, arr in layers.items():
         Image.fromarray(arr).save(OUT / f"{name}.webp", lossless=False, quality=92, method=6)
+    for old in ("thigh-l", "thigh-r", "shin-l", "shin-r"):  # replaced by leg + shoe
+        (OUT / f"{old}.webp").unlink(missing_ok=True)
+
+    # Part-closed eyelids, drawn inside the eye openings.
+    for level, arr in lid_levels(idle).items():
+        Image.fromarray(arr).save(OUT / f"eyes-lid-{round(level * 100)}.png")
+
+    # A closed, flat mouth from the thinking pose, feathered into the face.
+    think = defringe(load("stu-think.webp"))
+    mx, my, mw, mh = MOUTH_RECT
+    patch = think[my:my + mh, mx:mx + mw].copy()
+    pyy, pxx = np.mgrid[0:mh, 0:mw]
+    # The frown sits at canvas (330-380, 285-292); the thinking pose's finger
+    # is just below it, so keep the patch tight.
+    cx, cy = 355 - mx, 289 - my
+    d = np.sqrt(((pxx - cx) / 34) ** 2 + ((pyy - cy) / 10) ** 2)
+    patch[..., 3] = (np.clip((1.25 - d) / 0.35, 0, 1) * 255).astype(np.uint8)
+    Image.fromarray(patch).save(OUT / "mouth-flat.png")
     return layers, idle
 
 
@@ -373,6 +553,8 @@ def compose(layers, arm_l=4.0, arm_r=4.0, head=0.0, bg=(250, 249, 247, 255)):
 
     put("leg-l")
     put("leg-r")
+    put("shoe-l")
+    put("shoe-r")
     put("shoulders")
     # PIL rotates counter-clockwise for positive angles; the screen-left arm
     # raises clockwise.
@@ -414,6 +596,10 @@ if __name__ == "__main__":
     built, _ = build()
     print("wrote", ", ".join(sorted(built)), "to", OUT)
     print("outAngle (RIG.outAngle in stu-avatar.js):", out_angle())
+    print("leg x (RIG legs in stu-avatar.js):", LEG_X, "ankle y:", ANKLE_Y, "hip/foot y:", HIP_Y, FOOT_Y)
+    for side, box in BROW_BOXES.items():
+        ys, xs = np.nonzero(brow_mask(defringe(load("stu-idle.webp")), box))
+        print(f"brow-{side} centre:", int(xs.mean()), int(ys.mean()))
     if args.preview:
         preview(built, args.preview)
         print("preview:", args.preview)
