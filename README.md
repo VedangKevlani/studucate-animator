@@ -37,8 +37,8 @@ build (the Windows `winget` command above installs one).
 ## 2. Install
 
 ```shell
-git clone https://github.com/VedangKevlani/studucate-voice-designer.git
-cd studucate-voice-designer
+git clone https://github.com/VedangKevlani/studucate-animator.git
+cd studucate-animator
 ```
 
 **Option A: uv (recommended)**
